@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow                  # new type of k8s spec
+metadata:
+  generateName: hello-world-    # name of the workflow spec
+spec:
+  entrypoint: main         # invoke the main template
+  templates:
+    - name: main              # name of the template
+      container:
+        image: alpine
+        command: [ "sh", "-c" ]
+        args: [ "echo helloworld" ]

@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: loops-
+spec:
+  entrypoint: loop-example
+  templates:
+  - name: loop-example
+    steps:
+    - - name: print-pet
+        template: print-pet
+        arguments:
+          parameters:
+          - name: job-index
+            value: "{{item}}"
+        withSequence:     # loop to run print-pet template with parameter job-index 1 ~ 5 respectively.
+          start: "1"
+          end: "5"
+  - name: print-pet
+    inputs:
+      parameters:
+      - name: job-index
+    container:
+      image: acr-multiple-clusters-registry.cn-hangzhou.cr.aliyuncs.com/ack-multiple-clusters/print-pet
+      command: [/tmp/print-pet.sh]
+      args: ["{{inputs.parameters.job-index}}"] # input parameter as args
+
