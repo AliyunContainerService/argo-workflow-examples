@@ -1,0 +1,96 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: dynamic-dag-map-reduce-
+spec:
+  entrypoint: main
+  # claim a OSS PVC, workflow can read/write file in OSS through PVC. 
+  volumes:
+    - name: workdir
+      persistentVolumeClaim:
+        claimName: pvc-oss
+  # how many tasks to split, default is 5.
+  arguments:
+    parameters:
+      - name: numParts
+        value: "5"
+  templates:
+    - name: main
+      # DAG definition.
+      dag:
+        tasks:
+          # split log files to several small files, based on numParts.
+          - name: split
+            template: split
+            arguments:
+              parameters:
+                - name: numParts
+                  value: "{{workflow.parameters.numParts}}"
+          # multiple map task to count words in each small file.
+          - name: map
+            template: map
+            arguments:
+              parameters:
+                - name: partId
+                  value: '{{item}}'
+            depends: "split"
+            # run as a loop, partId from split task json outputs.
+            withParam: '{{tasks.split.outputs.result}}'
+          - name: reduce
+            template: reduce
+            arguments:
+              parameters:
+                - name: numParts
+                  value: "{{workflow.parameters.numParts}}"
+            depends: "map"
+    # The `split` task split the big log file to several small files. Each file has a unique ID (partId).
+    # Finally, it dumps a list of partId to stdout as output parameters
+    - name: split
+      inputs:
+        parameters:
+          - name: numParts
+      container:
+        image: acr-multiple-clusters-registry.cn-hangzhou.cr.aliyuncs.com/ack-multiple-clusters/python-log-count
+        command: [python]
+        args: ["split.py"]
+        env:
+        - name: NUM_PARTS
+          value: "{{inputs.parameters.numParts}}"
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt/vol
+    # One `map` per partID is started. Finds its own "part file" and processes it.
+    - name: map
+      inputs:
+        parameters:
+          - name: partId
+      container:
+        image: acr-multiple-clusters-registry.cn-hangzhou.cr.aliyuncs.com/ack-multiple-clusters/python-log-count
+        command: [python]
+        args: ["count.py"]
+        env:
+        - name: PART_ID
+          value: "{{inputs.parameters.partId}}"
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt/vol
+    # The `reduce` task takes the "results directory" and returns a single result.
+    - name: reduce
+      inputs:
+        parameters:
+          - name: numParts
+      container:
+        image: acr-multiple-clusters-registry.cn-hangzhou.cr.aliyuncs.com/ack-multiple-clusters/python-log-count
+        command: [python]
+        args: ["merge.py"]
+        env:
+        - name: NUM_PARTS
+          value: "{{inputs.parameters.numParts}}"
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt/vol
+      outputs:
+        artifacts:
+          - name: result
+            path: /mnt/vol/result.json
+
