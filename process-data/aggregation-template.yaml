@@ -1,0 +1,156 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: aggregation-demo
+spec:
+  entrypoint: main
+  volumes:
+    - name: workdir
+      persistentVolumeClaim:
+        claimName: pvc-oss
+  arguments:
+    parameters:
+      - name: numbers
+        value: "256"
+  templates:
+    - name: main
+      steps:
+        - - name: process-data-l1
+            template: process-data
+            arguments:
+              parameters:
+                - name: worker_number
+                  value: "{{item}}"
+                - name: level_number
+                  value: 1
+                - name: instance_spec
+                  value: 0.5-1Gi
+            withSequence:
+              count: "{{workflow.parameters.numbers}}"
+        - - name: process-data-l2
+            template: process-data
+            arguments:
+              parameters:
+                - name: worker_number
+                  value: "{{item}}"
+                - name: level_number
+                  value: 2
+                - name: instance_spec
+                  value: 1-2Gi
+            withSequence:
+              count: "{{=asInt(workflow.parameters.numbers)/2}}"
+        - - name: process-data-l3
+            template: process-data
+            arguments:
+              parameters:
+                - name: worker_number
+                  value: "{{item}}"
+                - name: level_number
+                  value: 3
+                - name: instance_spec
+                  value: 2-4Gi
+            withSequence:
+              count: "{{=asInt(workflow.parameters.numbers)/4}}"
+        - - name: process-data-l4
+            template: process-data
+            arguments:
+              parameters:
+                - name: worker_number
+                  value: "{{item}}"
+                - name: level_number
+                  value: 4
+                - name: instance_spec
+                  value: 4-8Gi
+            withSequence:
+              count: "{{=asInt(workflow.parameters.numbers)/8}}"
+        - - name: process-data-l5
+            template: process-data
+            arguments:
+              parameters:
+                - name: worker_number
+                  value: "{{item}}"
+                - name: level_number
+                  value: 5
+                - name: instance_spec
+                  value: 8-16Gi
+            withSequence:
+              count: "{{=asInt(workflow.parameters.numbers)/16}}"
+        - - name: merge-data
+            template: merge-data
+            arguments:
+              parameters:
+                - name: number
+                  value: "{{=asInt(workflow.parameters.numbers)/16}}"
+                - name: instance_spec
+                  value: 32-64Gi
+
+    - name: process-data
+      inputs:
+        parameters:
+          - name: worker_number
+          - name: level_number
+          - name: instance_spec
+      metadata:
+        annotations:
+          k8s.aliyun.com/eci-use-specs: "{{inputs.parameters.instance_spec}}"
+      script:
+        image: python:alpine3.6
+        command:
+          - python
+        source: |
+          import os
+          import sys
+          first = int({{inputs.parameters.worker_number}})*2
+          second = int({{inputs.parameters.worker_number}})*2 + 1
+          targetDir = str(int({{inputs.parameters.level_number}}) + 1) 
+          with open('/mnt/vol/aggregation-demo/l{{inputs.parameters.level_number}}/' + str(first) + '.txt', 'r') as file1:
+            content1 = file1.read().replace(" ", "").replace("\n", "")
+          with open('/mnt/vol/aggregation-demo/l{{inputs.parameters.level_number}}/' + str(second) + '.txt', 'r') as file2:
+            content2 = file2.read().replace(" ", "").replace("\n", "")
+          combined_content = content1 + content2 
+          if not os.path.exists("/mnt/vol/aggregation-demo/l" + targetDir):
+            try:
+              os.mkdir("/mnt/vol/aggregation-demo/l" + targetDir)
+            except Exception as e:
+              print("Got a exception: {e}")
+          with open('/mnt/vol/aggregation-demo/l' + targetDir +'/{{inputs.parameters.worker_number}}.txt', 'w') as conbine_file:
+            conbine_file.write(combined_content)
+          print("The combined content is:" + combined_content)
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt/vol
+
+    - name: merge-data
+      metadata:
+        annotations:
+          k8s.aliyun.com/eci-use-specs: "{{inputs.parameters.instance_spec}}"
+      inputs:
+        parameters:
+          - name: number
+          - name: instance_spec
+      script:
+        image: docker/whalesay:latest
+        command:
+          - bash
+        source: |
+          #!/bin/bash
+          number_of_files=$(( {{inputs.parameters.number}} )) # 假设inputs.parameters.number是传入的参数
+          combined_content=""
+
+          for ((i=0; i<$number_of_files; i++)); do
+              content=$(tr -d ' \n' < "/mnt/vol/aggregation-demo/l6/${i}.txt") # 去除空格和换行读取文件内容
+              combined_content="${combined_content}${content}" # 累加内容
+          done
+
+          echo "${combined_content}" > "/mnt/vol/aggregation-demo/result.txt" # 写入到结果文件
+
+          echo "The result is: ${combined_content}"
+          echo "The length is: ${#combined_content}" # 计算并输出字符串长度
+
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt/vol
+      outputs:
+        artifacts:
+          - name: result
+            path: /mnt/vol/aggregation-demo/result.txt

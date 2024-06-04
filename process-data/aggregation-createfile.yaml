@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: aggregation-prepare-data-
+spec:
+  entrypoint: main
+  volumes:
+    - name: workdir
+      persistentVolumeClaim:
+        claimName: pvc-oss
+  templates:
+    - name: main
+      dag:
+        tasks:
+          - name: prepare-data
+            template: create-file
+
+    - name: create-file
+      script:
+        image: python:alpine3.6
+        command:
+          - python
+        source: |
+          import os
+          import sys
+          import random
+          for i in range(512):
+            with open('/mnt/vol/aggregation-demo/l1/' + str(i) + '.txt', 'w') as conbine_file:              
+              combined_content = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+              conbine_file.write(combined_content)
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt/vol
