@@ -123,7 +123,6 @@ spec:
           import os
           import sys
           start = int({{inputs.parameters.start}})
-          print(start)
           number = int({{inputs.parameters.number}})
           print(number)
           interval = int({{inputs.parameters.interval}})
@@ -134,14 +133,8 @@ spec:
           if interval==2:
             end = start + (number-start+1)*10
             start = start + (number-start)*10
-          print("start")
-          print(start)
-          print(end)
-          print(interval)
           combined_content=""
           for i in range(start, end, interval):
-              print("dkfa")
-              print(i)
               filename = str(i) + ".txt"
               file_path = "/mnt/vol/aggregation-demo/{{inputs.parameters.sourcepath}}" + "/" + filename
               try:
