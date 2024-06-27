@@ -1,0 +1,215 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: aggregation-parallel-
+spec:
+  entrypoint: main
+  volumes:
+    - name: workdir
+      persistentVolumeClaim:
+        claimName: pvc-oss
+  templates:
+    - name: main
+      steps:
+        - - name: process-data
+            template: process-data-fifty
+            arguments:
+              parameters:
+                - name: start
+                  value: "{{item.start}}"
+                - name: end
+                  value: "{{item.end}}"
+                - name: sourcepath
+                  value: "l1"
+                - name: destinationpath
+                  value: "l50" 
+            withItems:
+              - { start: "0", end: "50" }
+              - { start: "50", end: "100" }
+              - { start: "100", end: "150" }
+              - { start: "150", end: "200" }
+              - { start: "200", end: "250" }
+              - { start: "250", end: "300" }
+              - { start: "300", end: "350" }
+              - { start: "350", end: "400" }
+              - { start: "400", end: "450" }
+              - { start: "450", end: "500" }
+        - - name: finnal-merge
+            template: merge-data
+            arguments:
+              parameters:
+                - name: start
+                  value: "0"
+                - name: end
+                  value: "500"
+                - name: sourcepath
+                  value: "l50"
+                - name: destinationpath
+                  value: "result"
+                - name: interval
+                  value: "50"
+
+
+    - name: process-data-fifty
+      inputs:
+        parameters:
+          - name: start
+          - name: end
+          - name: sourcepath
+          - name: destinationpath
+      steps:
+        - - name: process-data-l2
+            template: process-data
+            arguments:
+              parameters:
+                - name: start
+                  value: "{{=asInt(inputs.parameters.start)}}"
+                - name: number
+                  value: "{{item}}"
+                - name: sourcepath
+                  value: "{{inputs.parameters.sourcepath}}"
+                - name: destinationpath
+                  value: "l2"
+                - name: interval
+                  value: 1
+            withSequence:
+              start: "{{inputs.parameters.start}}"
+              end: "{{=asInt(inputs.parameters.start)+25-1}}"
+        - - name: process-data-l10
+            template: process-data
+            arguments:
+              parameters:
+                - name: start
+                  value: "{{=asInt(inputs.parameters.start)}}"
+                - name: number
+                  value: "{{item}}"
+                - name: sourcepath
+                  value: "l2"
+                - name: destinationpath
+                  value: "l10"
+                - name: interval
+                  value: 2
+            withSequence:
+              start: "{{inputs.parameters.start}}"
+              end: "{{=asInt(inputs.parameters.start)+5-1}}"
+        - - name: merge
+            template: merge-data
+            arguments:
+              parameters:
+                - name: start
+                  value: "{{inputs.parameters.start}}"
+                - name: end
+                  value: "{{inputs.parameters.end}}"
+                - name: sourcepath
+                  value: "l10"
+                - name: destinationpath
+                  value: "{{inputs.parameters.destinationpath}}"
+                - name: interval
+                  value: "10"
+        
+    - name: process-data
+      inputs:
+        parameters:
+          - name: start
+          - name: number
+          - name: sourcepath
+          - name: destinationpath
+          - name: interval
+      script:
+        image: python:alpine3.6
+        command:
+          - python
+        source: |
+          import os
+          import sys
+          start = int({{inputs.parameters.start}})
+          print(start)
+          number = int({{inputs.parameters.number}})
+          print(number)
+          interval = int({{inputs.parameters.interval}})
+          end = 0
+          if interval==1:
+            end = start + (number-start+1)*2
+            start = start + (number-start)*2
+          if interval==2:
+            end = start + (number-start+1)*10
+            start = start + (number-start)*10
+          print("start")
+          print(start)
+          print(end)
+          print(interval)
+          combined_content=""
+          for i in range(start, end, interval):
+              print("dkfa")
+              print(i)
+              filename = str(i) + ".txt"
+              file_path = "/mnt/vol/aggregation-demo/{{inputs.parameters.sourcepath}}" + "/" + filename
+              try:
+                  with open(file_path, 'r') as file:
+                      content = file.read().replace(' ', '').replace('\n', '')  # 去除空格和换行读取文件内容
+                      combined_content += content  # 累加内容
+              except FileNotFoundError:
+                  print(f"警告：文件 {file_path} 未找到。")
+              print(combined_content)
+
+          if not os.path.exists("/mnt/vol/aggregation-demo/{{inputs.parameters.destinationpath}}"):
+            try:
+              os.mkdir("/mnt/vol/aggregation-demo/{{inputs.parameters.destinationpath}}")
+            except Exception as e:
+              print("Got a exception: {e}")
+          filename = str(start) + ".txt"
+          with open('/mnt/vol/aggregation-demo/{{inputs.parameters.destinationpath}}/' + filename, 'w') as conbine_file:
+            conbine_file.write(combined_content)
+          print("The combined content is:" + combined_content)
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt/vol
+
+    - name: merge-data
+      retryStrategy:
+        limit: "10"
+      inputs:
+        parameters:
+          - name: start
+          - name: end
+          - name: interval
+          - name: sourcepath
+          - name: destinationpath
+      script:
+        image: python:alpine3.6
+        command:
+          - python
+        source: |
+          import os
+          import sys
+          import random
+          start = int({{inputs.parameters.start}})
+          end = int({{inputs.parameters.end}})
+          interval = int({{inputs.parameters.interval}})
+          combined_content=""
+          for i in range(start, end, interval):
+              filename = str(i) + ".txt"
+              file_path = "/mnt/vol/aggregation-demo/{{inputs.parameters.sourcepath}}" +  "/" + filename
+              try:
+                  with open(file_path, 'r') as file:
+                      content = file.read().replace(' ', '').replace('\n', '')  # 去除空格和换行读取文件内容
+                      combined_content += content  # 累加内容
+              except FileNotFoundError:
+                  print(f"警告：文件 {file_path} 未找到。")
+
+          if not os.path.exists("/mnt/vol/aggregation-demo/{{inputs.parameters.destinationpath}}"):
+            try:
+              os.mkdir("/mnt/vol/aggregation-demo/{{inputs.parameters.destinationpath}}")
+            except Exception as e:
+              print("Got a exception: {e}")
+          filename = str(start) + ".txt"
+          with open('/mnt/vol/aggregation-demo/{{inputs.parameters.destinationpath}}/' + filename, 'w') as conbine_file:
+            conbine_file.write(combined_content)
+          print("The combined content is:" + combined_content)
+          if interval==50:
+            exit_code = random.choice([0,1,1]);
+            sys.exit(exit_code)
+
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt/vol
