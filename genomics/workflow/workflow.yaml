@@ -1,0 +1,101 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: bwa-oss-
+spec:
+  entrypoint: bwa-oss
+  arguments: 
+    parameters:
+    - name: fastqFolder # download fastq file
+      value: /gene
+    - name: reference # reference genome file.
+      value: https://ags-public.oss-cn-beijing.aliyuncs.com/alignment/subset_assembly.fa.gz
+    - name: fastq1 # Raw sequencing file
+      value: https://ags-public.oss-cn-beijing.aliyuncs.com/alignment/SRR1976948_1.fastq.gz
+    - name: fastq2
+      value: https://ags-public.oss-cn-beijing.aliyuncs.com/alignment/SRR1976948_2.fastq.gz
+
+
+  volumes: # mount a remote storage volume
+  - name: ossdir
+    persistentVolumeClaim:
+      claimName: pvc-oss
+
+  templates:
+  - name: bwaprepare # data preparation phase, download and unzip the FASTQ and reference files, and then index the reference file.
+    container:
+      image: registry.cn-beijing.aliyuncs.com/geno/alltools:v0.2
+      imagePullPolicy: Always
+      command: [sh,-c]
+      args:
+      - mkdir -p /bwa{{workflow.parameters.fastqFolder}}; cd /bwa{{workflow.parameters.fastqFolder}}; rm -rf SRR1976948*;
+        wget {{workflow.parameters.reference}};
+        wget {{workflow.parameters.fastq1}};
+        wget {{workflow.parameters.fastq2}};
+        gzip -d subset_assembly.fa.gz;
+        gunzip -c SRR1976948_1.fastq.gz | head -800000 > SRR1976948.1;
+        gunzip -c SRR1976948_2.fastq.gz | head -800000 > SRR1976948.2;
+        bwa index subset_assembly.fa;
+
+      volumeMounts:
+      - name: ossdir
+        mountPath: /bwa
+    retryStrategy: 
+      limit: 3
+
+  - name: bwamap # Align the sequencing data against the reference file
+    inputs:
+      parameters:
+      - name: object
+    container:
+      image: registry.cn-beijing.aliyuncs.com/geno/alltools:v0.2
+      imagePullPolicy: Always
+      command:
+      - sh
+      - -c
+      args:
+      - cd /bwa{{workflow.parameters.fastqFolder}};
+        bwa aln subset_assembly.fa {{inputs.parameters.object}} > {{inputs.parameters.object}}.untrimmed.sai;
+      volumeMounts:
+      - name: ossdir
+        mountPath: /bwa
+    retryStrategy:
+      limit: 3
+
+  - name: bwaindex # Map raw sequencing data to the reference, generate, sort, and index the BAM file, and then review the alignment results.
+    container:
+      args:
+      - cd /bwa{{workflow.parameters.fastqFolder}};
+        bwa sampe subset_assembly.fa SRR1976948.1.untrimmed.sai SRR1976948.2.untrimmed.sai SRR1976948.1 SRR1976948.2 > SRR1976948.untrimmed.sam;
+        samtools import subset_assembly.fa SRR1976948.untrimmed.sam SRR1976948.untrimmed.sam.bam;
+        samtools sort SRR1976948.untrimmed.sam.bam -o SRR1976948.untrimmed.sam.bam.sorted.bam;
+        samtools index SRR1976948.untrimmed.sam.bam.sorted.bam;
+        samtools tview SRR1976948.untrimmed.sam.bam.sorted.bam subset_assembly.fa -p k99_13588:1000 -d T;
+      command:
+      - sh
+      - -c
+      image: registry.cn-beijing.aliyuncs.com/geno/alltools:v0.2
+      imagePullPolicy: Always
+      volumeMounts:
+      - mountPath: /bwa/
+        name: ossdir
+    retryStrategy:
+      limit: 3
+
+  - name: bwa-oss # orchestrate multiple steps
+    dag:
+      tasks:
+      - name: bwaprepare # preparing data
+        template: bwaprepare
+
+      - name: bwamap # preprocessing and generating alignment results
+        template: bwamap
+        dependencies: [bwaprepare] # depends on step of preparing data 
+        arguments:
+          parameters:
+          - name: object
+            value: "{{item}}"
+        withItems: ["SRR1976948.1","SRR1976948.2"] # processing multiple files in parrellel
+      - name: bwaindex # Compare and show alignment result
+        template: bwaindex
+        dependencies: [bwamap] # depends on preprocessing
