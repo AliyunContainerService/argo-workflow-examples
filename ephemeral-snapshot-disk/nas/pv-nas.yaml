@@ -18,7 +18,7 @@ spec:
     driver: nasplugin.csi.alibabacloud.com
     volumeAttributes:
       path: /
-      server: 1a026499df-nwt28.cn-beijing.nas.aliyuncs.com
+      server: xxx.cn-beijing.nas.aliyuncs.com
     volumeHandle: pv-nas
   mountOptions:
   - nolock,tcp,noresvport
