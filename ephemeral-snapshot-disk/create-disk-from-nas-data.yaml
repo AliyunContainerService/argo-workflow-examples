@@ -1,0 +1,84 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: create-disk-copy-nas-data
+spec:
+  entrypoint: main
+  
+  volumes:
+    - name: pvc-disk
+      persistentVolumeClaim:
+        claimName: pvc-disk
+    - name: pvc-nas
+      persistentVolumeClaim:
+        claimName: pvc-nas
+  
+  templates:
+    - name: main
+      steps:
+        - - name: create-test-files-in-nas
+            template: create-files
+        - - name: copy-nas-to-disk
+            template: copy-files
+
+    # For test only, if files ready in nas, you can skip this step
+    - name: create-files
+      container:
+        image: mirrors-ssl.aliyuncs.com/busybox:latest
+        command:
+          - sh
+          - -c
+        args:
+          - |
+            echo "list files in nas!"
+            ls -l /pvc-nas
+            echo "remove files in nas!"
+            rm /pvc-nas/*
+            echo "creating files in nas!"
+            dd if=/dev/random of=/pvc-nas/testfile1.txt bs=20M count=10
+            echo "created files in nas!"
+            echo "list files in nas!"
+            ls -l /pvc-nas
+        volumeMounts:
+        - name: pvc-nas
+          mountPath: /pvc-nas
+        resources:
+          limits:
+            cpu: '4'
+            memory: 16Gi
+          requests:
+            cpu: '4'
+            memory: 16Gi
+
+    - name: copy-files
+      metadata:
+        labels:
+          alibabacloud.com/acs: "true"
+          alibabacloud.com/compute-class: general-purpose
+        annotations:
+          k8s.aliyun.com/eci-fail-strategy: "fail-back"
+      container:
+        image: mirrors-ssl.aliyuncs.com/busybox:latest
+        command:
+          - sh
+          - -c
+        args:
+          - |
+            echo "list files in nas!"
+            ls -l /pvc-nas
+            echo "copy files from nas to disk!"
+            cp /pvc-nas/* /pvc-disk
+            echo "list files in disk!"
+            ls -l /pvc-disk
+        volumeMounts:
+        - name: pvc-disk
+          mountPath: /pvc-disk
+        - name: pvc-nas
+          mountPath: /pvc-nas
+        resources:
+          limits:
+            cpu: '4'
+            memory: 16Gi
+          requests:
+            cpu: '4'
+            memory: 16Gi

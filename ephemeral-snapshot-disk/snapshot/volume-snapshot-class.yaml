@@ -1,0 +1,9 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+ name: default-snapclass
+driver: diskplugin.csi.alibabacloud.com
+parameters:
+  retentionDays: "365"
+  forceDelete: "true"
+deletionPolicy: Delete
