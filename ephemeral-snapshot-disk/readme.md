@@ -9,8 +9,7 @@ Steps:
 1. create nas pv: kubectl apply -f nas/pv-nas.yaml 
 2. create nas pvc: kubectl apply -f nas/pvc-nas.yaml
 3. create disk pvc: kubectl apply -f disk/pvc-disk.yaml
-5. create workflow to create cloud disk and copy data from nas to disk: 
-
+5. create workflow to create cloud disk and copy data from nas to disk: argo submit creat-disk-from-nas-data.yaml
 6. create snapshot storage class: kubectl apply -f snapshot/volume-snapshot-class.yaml
 7. create snapshot: kubectl apply -f snapshot/volume-snapshot.yaml
 8. create workflow to read data from ephemeral cloud disk, the disk is created from the snapshot: argo submit parallel-read-snapshot-data.yaml
