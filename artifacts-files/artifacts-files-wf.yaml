@@ -1,0 +1,66 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: artifact-fanout-example
+spec:
+  entrypoint: main
+  templates:
+
+  # 主流程
+  - name: main
+    steps:
+      - - name: generate
+          template: generate-files
+
+      - - name: process
+          template: process-file
+          arguments:
+            artifacts:
+              - name: filedir
+                from: "{{steps.generate.outputs.artifacts.filedir}}"
+            parameters:
+              - name: filename
+                value: '{{item}}'
+          withParam: "{{steps.generate.outputs.result}}"
+
+  # Step 1：生成文件 + 输出目录 Artifact + 输出文件列表参数
+  - name: generate-files
+    script:
+      image: mirrors-ssl.aliyuncs.com/alpine:3.7
+      command: [sh]
+      source: |
+        mkdir -p /tmp/out
+
+        echo "hello from file1" > /tmp/out/file-1
+        echo "hello from file2" > /tmp/out/file-2
+        echo "hello from file3" > /tmp/out/file-3
+
+        # 输出 JSON 数组供 withParam 使用
+        echo '["file-1","file-2","file-3"]'
+
+    outputs:
+      result: ""  # 这里使用 stdout 的 JSON
+      artifacts:
+        - name: filedir
+          path: /tmp/out
+
+  # Step 2：并行接收参数（文件名）和artifact（整个目录），处理子文件
+  - name: process-file
+    inputs:
+      parameters:
+        - name: filename       # file-1 / file-2 / file-3
+      artifacts:
+        - name: filedir    # 来自 Step 1 的整个目录 artifact
+          path: /tmp/in    # Argo 会把目录下载到这里
+
+    script:
+      image: mirrors-ssl.aliyuncs.com/alpine:3.7
+      command: [sh]
+      source: |
+        FILE_NAME="{{inputs.parameters.filename}}"
+        FULL_PATH="/tmp/in/$FILE_NAME"
+
+        echo "Processing file: $FILE_NAME"
+        echo "-----------------------"
+        cat $FULL_PATH
+        echo "-----------------------"

@@ -1,0 +1,126 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: all-in-one-template
+spec:
+  podGC:
+    labelSelector:
+      matchLabels:
+        use-ephemeral-disk: "true"
+    strategy: OnPodCompletion
+
+  entrypoint: main
+  
+  volumes:
+    - name: pvc-disk
+      persistentVolumeClaim:
+        claimName: pvc-disk
+    - name: pvc-nas
+      persistentVolumeClaim:
+        claimName: pvc-nas
+    - name: scratch-volume
+      ephemeral:      # 声明当前存储为临时存储
+        volumeClaimTemplate:
+          metadata:
+            labels:
+              diskType: scratch-volume
+          spec:
+            accessModes: [ "ReadWriteOnce" ]
+            storageClassName: "alicloud-disk-topology-alltype"
+            resources:
+              requests:
+                storage: 100Gi
+            dataSource:
+              name: snapshot-nas-1
+              kind: VolumeSnapshot
+              apiGroup: snapshot.storage.k8s.io
+  
+  templates:
+    - name: main
+      steps:
+        - - name: create-test-files-in-nas
+            template: create-files
+        - - name: copy-nas-to-disk
+            template: copy-files
+        - - name: create-snapshot
+            template: create-snapshot
+        - - name: parallel-read-snapshot-data
+            templateRef:
+              name: parallel-read-snapshot-data
+              template: main
+
+    # For test only, if files ready in nas, you can skip this step
+    - name: create-files
+      container:
+        image: mirrors-ssl.aliyuncs.com/busybox:latest
+        command:
+          - sh
+          - -c
+        args:
+          - |
+            echo "list files in nas!"
+            ls -l /pvc-nas
+            echo "remove files in nas!"
+            rm /pvc-nas/*
+            echo "creating files in nas!"
+            dd if=/dev/random of=/pvc-nas/testfile1.txt bs=20M count=10
+            echo "created files in nas!"
+            echo "list files in nas!"
+            ls -l /pvc-nas
+        volumeMounts:
+        - name: pvc-nas
+          mountPath: /pvc-nas
+        resources:
+          limits:
+            cpu: '4'
+            memory: 16Gi
+          requests:
+            cpu: '4'
+            memory: 16Gi
+
+    - name: copy-files
+      metadata:
+        labels:
+          alibabacloud.com/acs: "true"
+          alibabacloud.com/compute-class: general-purpose
+        annotations:
+          k8s.aliyun.com/eci-fail-strategy: "fail-back"
+      container:
+        image: mirrors-ssl.aliyuncs.com/busybox:latest
+        command:
+          - sh
+          - -c
+        args:
+          - |
+            echo "list files in nas!"
+            ls -l /pvc-nas
+            echo "copy files from nas to disk!"
+            cp /pvc-nas/* /pvc-disk
+            echo "list files in disk!"
+            ls -l /pvc-disk
+        volumeMounts:
+        - name: pvc-disk
+          mountPath: /pvc-disk
+        - name: pvc-nas
+          mountPath: /pvc-nas
+        resources:
+          limits:
+            cpu: '4'
+            memory: 16Gi
+          requests:
+            cpu: '4'
+            memory: 16Gi
+
+    - name: create-snapshot
+      resource:
+        action: apply
+        manifest: |
+          apiVersion: snapshot.storage.k8s.io/v1
+          kind: VolumeSnapshot
+          metadata:
+            name: snapshot-nas-1
+            namespace: default
+          spec:
+            volumeSnapshotClassName: default-snapclass
+            source:
+              persistentVolumeClaimName: pvc-disk

@@ -1,0 +1,72 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: parallel-read-snapshot-data
+spec:
+
+  entrypoint: main
+
+  volumes:
+    - name: scratch-volume
+      ephemeral:      # 声明当前存储为临时存储
+        volumeClaimTemplate:
+          metadata:
+            labels:
+              diskType: scratch-volume
+          spec:
+            accessModes: [ "ReadWriteOnce" ]
+            storageClassName: "alicloud-disk-topology-alltype"
+            resources:
+              requests:
+                storage: 100Gi
+            dataSource:
+              name: snapshot-nas-1
+              kind: VolumeSnapshot
+              apiGroup: snapshot.storage.k8s.io
+
+  templates:
+    - name: main
+      dag:
+        tasks:
+          # 并行执行多个 echo 任务
+          - name: echo-task
+            template: echo-template
+            arguments:
+              parameters:
+                - name: index
+                  value: "{{item}}"
+            withSequence:
+              count: 2
+
+    - name: echo-template
+      metadata:
+        labels:
+          alibabacloud.com/acs: "true"
+          alibabacloud.com/compute-class: general-purpose
+          use-ephemeral-disk: "true"
+        annotations:
+          k8s.aliyun.com/eci-fail-strategy: "fail-back"
+      container:
+        image: mirrors-ssl.aliyuncs.com/busybox:latest
+        command:
+          - sh
+          - -c
+        args:
+          - |
+            echo "🚀 子任务启动，编号: {{inputs.parameters.index}}"
+            echo "list content in disk created from snapshot"
+            ls /scratch-volume
+            echo "✅ 子任务完成，编号: {{inputs.parameters.index}}"
+        volumeMounts:
+        - name: scratch-volume
+          mountPath: /scratch-volume
+        resources:
+          limits:
+            cpu: '4'
+            memory: 16Gi
+          requests:
+            cpu: '4'
+            memory: 16Gi
+      inputs:
+        parameters:
+          - name: index

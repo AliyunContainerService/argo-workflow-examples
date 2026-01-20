@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oss-secret
+  namespace: default
+stringData:
+  akId: xxx # akId需要替换为您的AccessKey ID。
+  akSecret: xxx
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: artifact-repositories
+  annotations:
+    # v3.0 and after - if you want to use a specific key, put that key into this annotation.
+    workflows.argoproj.io/default-artifact-repository: default-oss-artifact-repository
+data:
+  default-oss-artifact-repository: |
+    oss:
+      endpoint: http://oss-cn-beijing-internal.aliyuncs.com
+      bucket: your-bucket-name
+      accessKeySecret:
+        name: oss-secret
+        key: akId
+      secretKeySecret:
+        name: oss-secret
+        key: akSecret
