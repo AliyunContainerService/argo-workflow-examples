@@ -7,6 +7,6 @@ spec:
   templates:
     - name: main              # name of the template
       container:
-        image: alpine
+        image: mirrors-ssl.aliyuncs.com/busybox:latest
         command: [ "sh", "-c" ]
         args: [ "echo helloworld" ]

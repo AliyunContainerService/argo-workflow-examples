@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: helloworld-- 
+spec:
+  entrypoint: helloworld 
+  templates:
+  - name: helloworld
+    metadata:
+      labels:
+        alibabacloud.com/acs: "true"
+        # 指定compute-class为gpu类型
+        alibabacloud.com/compute-class: "gpu"
+        # 指定GPU型号为example-model，请按实际情况填写，如T4
+        alibabacloud.com/gpu-model-series: "T4"
+    container:
+      image: mirrors-ssl.aliyuncs.com/busybox:latest
+      resources:
+        limits:
+          cpu: 4
+          memory: "8Gi"
+          nvidia.com/gpu: "1" # 指定GPU数量，资源标签和数量请按实际情况填写 
+        requests:
+          cpu: 4
+          memory: "8Gi"
+          nvidia.com/gpu: "1" # 指定GPU数量，资源标签和数量请按实际情况填写
+      command:
+      - sh
+      - -c
+      args:
+      - echo "Hello, world!";
+        sleep 30;

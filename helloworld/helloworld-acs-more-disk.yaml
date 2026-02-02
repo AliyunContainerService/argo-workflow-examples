@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: helloworld-- 
+spec:
+  entrypoint: helloworld 
+  templates:
+  - name: helloworld 
+    metadata:
+      annotations:
+        alibabacloud.com/extra-ephemeral-storage: "20Gi"  # 声明要增加的临时存储空间大小
+    container:
+      image: mirrors-ssl.aliyuncs.com/busybox:latest
+      command:
+      - sh
+      - -c
+      args:
+      - echo "Hello, world!";
+        sleep 60;

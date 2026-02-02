@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: helloworld--perf-- 
+spec:
+  entrypoint: helloworld 
+  templates:
+  - name: helloworld
+    metadata:
+      labels:
+        alibabacloud.com/acs: "true"
+        alibabacloud.com/compute-class: performance
+    container:
+      image: mirrors-ssl.aliyuncs.com/busybox:latest
+      resources: # 配置更大的CPU和内存
+        limits:
+          cpu: 8
+          memory: "16Gi"
+        requests:
+          cpu: 8
+          memory: "16Gi"
+      command:
+      - sh
+      - -c
+      args:
+      - echo "Hello, world!";
+        sleep 30;
