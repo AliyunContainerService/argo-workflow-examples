@@ -13,6 +13,9 @@ Steps:
 7. create snapshot: kubectl apply -f snapshot/volume-snapshot.yaml
 8. create workflow to read data from ephemeral cloud disk, the disk is created from the snapshot: argo submit parallel-read-snapshot-data.yaml
 
+Notice: 
+1. please remove pod which mount pvc, it will remove the cloud disk to save cost. You can set podGC: strategy: OnPodCompletion in workflow yaml to remove pod when it completed.
+
 Debug commands:
 1. get snapshot storage class: kubectl get volumesnapshotclasses
 2. get snapshot: kubectl get volumesnapshots, and check from alibabacloud ecs console.
